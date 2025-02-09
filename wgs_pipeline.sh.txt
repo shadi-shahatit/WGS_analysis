@@ -1,0 +1,124 @@
+#### wgs pipeline - KJ project
+#### Shadi Shahatit - RA, JUST 2025
+
+#### Content:
+#### 1. Data processing 
+####	1.1	Ref download and indexing
+####	1.2	fastq QC
+####	1.3	Mapping
+####	1.4	Call variants and generate VCF files for SNPs and indels
+#### 2. Pop gene analysis
+####	2.1	
+####	2.2	 
+
+#### 1. Data processing 
+
+####	1.1	Ref download and indexing
+
+## download ref from NCBI and samples from ENA
+
+## for camels https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_036321535.1/ & https://www.ebi.ac.uk/ena/browser/view/PRJEB47650
+
+cd /home/shadi/Desktop/WGS_KJ/GCF_036321535.1_C_dromedarius/ncbi_dataset/data/GCA_036321535.1
+# awk '{if(substr($0,1,1)==">") print ">" substr($0,2); else print $0}'
+bwa index GCA_036321535.1_mCamDro1.pat_genomic.fna
+
+####	1.2	fastq QC
+
+## SAMPLES=("ERR6892497_1.fastq.gz" "ERR6892497_2.fastq.gz")
+
+## QC loop
+
+cd /Desktop/WGS_KJ
+
+REF_GENOME="GCA_036321535.1/GCA_036321535.1_mCamDro1.pat_genomic.fna"
+RAW_DIR="raw_fastq_files" 
+QC_DIR="qc_data"    
+STATS_DIR="stats"
+
+mkdir -p $QC_DIR $STATS_DIR   
+
+for R1 in $RAW_DIR/*_1.fastq.gz; do
+    SAMPLE=$(basename "${R1%_1.fastq.gz}") 
+    R2="$RAW_DIR/${SAMPLE}_2.fastq.gz" 
+
+    echo "Processing sample: $SAMPLE"
+
+    # Step 1: Summary Statistics on Raw Data
+    echo "Generating raw data summary statistics for $SAMPLE..."
+    fastqc "$R1" "$R2" -o "$STATS_DIR"  # Generate FastQC reports for raw data
+    
+    # Step 2: Quality Control & Trimming
+    echo "Performing quality control and trimming for $SAMPLE..."
+    fastp -i "$R1" -I "$R2" \
+          -o "$QC_DIR/${SAMPLE}_1_trimmed.fastp.fastq.gz" \
+          -O "$QC_DIR/${SAMPLE}_2_trimmed.fastp.fastq.gz" \
+          --html "$STATS_DIR/${SAMPLE}_fastp.html" \
+          --json "$STATS_DIR/${SAMPLE}_fastp.json"
+          
+     # Remove raw FASTQ files to save space
+     echo "Removing raw FASTQ files for $SAMPLE..."
+     rm -f "$R1" "$R2"
+
+    echo "Finished processing sample: $SAMPLE"
+done
+
+####	1.3	Mapping
+
+## mapping loop
+
+cd /Desktop/WGS_KJ
+
+REF_GENOME="GCA_036321535.1/GCA_036321535.1_mCamDro1.pat_genomic.fna"
+RAW_DIR="raw_fastq_files" 
+QC_DIR="qc_data"    
+STATS_DIR="stats"
+ALIGN_DIR="aligned_bam_files"
+
+mkdir -p "$ALIGN_DIR"
+
+for R1 in $QC_DIR/*_1_trimmed.fastp.fastq.gz; do
+    SAMPLE=$(basename "$R1" _1_trimmed.fastp.fastq.gz) 
+    R2="$QC_DIR/${SAMPLE}_2_trimmed.fastp.fastq.gz"  
+
+    echo "Processing sample: $SAMPLE"
+
+    # Step 1: Mapping to Reference Genome
+    echo "Mapping reads to reference genome for $SAMPLE..."
+    bwa mem -t 8 "$REF_GENOME" "$R1" "$R2" | samtools view -Sb - > "$ALIGN_DIR/${SAMPLE}.bam"
+
+    # Step 2: Generate Initial Alignment Statistics
+    echo "Generating initial alignment statistics for $SAMPLE..."
+    samtools flagstat "$ALIGN_DIR/${SAMPLE}.bam" > "$STATS_DIR/${SAMPLE}_initial_alignment_stats.txt"
+
+    # Step 3: Sorting BAM
+    echo "Sorting BAM file for $SAMPLE..."
+    samtools sort "$ALIGN_DIR/${SAMPLE}.bam" -o "$ALIGN_DIR/${SAMPLE}_sorted.bam"
+
+    # Remove unsorted BAM to save space
+    rm "$ALIGN_DIR/${SAMPLE}.bam"
+
+    # Step 4: Indexing BAM
+    echo "Indexing BAM file for $SAMPLE..."
+    samtools index "$ALIGN_DIR/${SAMPLE}_sorted.bam"
+
+    # Step 5: Generate Final Alignment Statistics
+    echo "Generating final alignment statistics for $SAMPLE..."
+    samtools flagstat "$ALIGN_DIR/${SAMPLE}_sorted.bam" > "$STATS_DIR/${SAMPLE}_final_alignment_stats.txt"
+
+    echo "Finished processing sample: $SAMPLE"
+done
+
+samtools stats aligned_bam_files/ERR6892497_sorted.bam > aligned_bam_files/ERR6892497_bam_stats.txt
+grep ^SN aligned_bam_files/ERR6892497_bam_stats.txt
+
+## combined loop
+
+
+
+####	1.4	Call variants and generate VCF files for SNPs and indels
+
+
+
+
+
